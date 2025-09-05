@@ -26,17 +26,29 @@ Stores all reviews in Postgres for analytics
 
 Workflow at a glance
 Cron (hourly)
+
   → PG Init (idempotent schema)
+  
   → PG Load (hotels, sources, settings, last_seen)
+  
       ├─ IF provider == google      → HTTP Google Reviews
+      
       └─ IF provider == tripadvisor → HTTP TripAdvisor Reviews
+      
   → Normalize (Code)  // unify shape + filter by last_seen
+  
   → OpenAI (HTTP POST) // sentiment
+  
   → Parse (Code)       // score + label
+  
   → PG Upsert (reviews)
+  
   → PG Offset (advance last_seen)
+  
   → IF Negative?
+  
        → IF Zendesk enabled?
+       
             → Zendesk: Create Ticket
 
 
