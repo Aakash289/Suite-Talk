@@ -25,6 +25,7 @@ Stores all reviews in Postgres for analytics
 
 
 Workflow at a glance
+
 Cron (hourly)
 
   → PG Init (idempotent schema)
