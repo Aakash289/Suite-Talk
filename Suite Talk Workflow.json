@@ -1,0 +1,489 @@
+{
+  "name": "Suite Talk",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyHour"
+            }
+          ]
+        }
+      },
+      "id": "91ecc4b9-2a10-43fd-8c0a-87e52dfd6bbe",
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        -928,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS hotels (hotel_id TEXT PRIMARY KEY, name TEXT NOT NULL);\nCREATE TABLE IF NOT EXISTS hotel_sources (hotel_id TEXT NOT NULL, provider TEXT NOT NULL, location_id TEXT, api_params JSONB DEFAULT '{}'::jsonb, PRIMARY KEY (hotel_id, provider));\nCREATE TABLE IF NOT EXISTS reviews (id TEXT PRIMARY KEY, provider TEXT NOT NULL, hotel_id TEXT NOT NULL, rating NUMERIC, review_text TEXT, author TEXT, review_time TIMESTAMPTZ, permalink TEXT, sentiment NUMERIC, sentiment_label TEXT, raw JSONB, created_at TIMESTAMPTZ DEFAULT now());\nCREATE TABLE IF NOT EXISTS review_offsets (provider TEXT NOT NULL, hotel_id TEXT NOT NULL, last_seen TIMESTAMPTZ, PRIMARY KEY (provider, hotel_id));\nCREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);\nINSERT INTO settings(key, value) VALUES\n('negative_threshold','-0.2'),('zendesk_enabled','false'),('openai_model','gpt-4o-mini')\nON CONFLICT (key) DO NOTHING;",
+        "options": {}
+      },
+      "id": "36a64cee-feae-4a0b-9cdf-bafb8f7fe7bc",
+      "name": "PG Init",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "KdOvWQpeorjuzv9S",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  hs.provider,\n  hs.hotel_id,\n  hs.location_id,\n  COALESCE(hs.api_params, '{}'::jsonb) AS api_params,\n  h.name AS hotel_name,\n  (SELECT value::numeric FROM settings WHERE key='negative_threshold') AS negative_threshold,\n  (SELECT value FROM settings WHERE key='openai_model') AS openai_model,\n  (SELECT CASE WHEN value IN ('true','1','t','yes') THEN true ELSE false END FROM settings WHERE key='zendesk_enabled') AS zendesk_enabled,\n  ro.last_seen\nFROM hotel_sources hs\nJOIN hotels h USING (hotel_id)\nLEFT JOIN review_offsets ro ON ro.provider = hs.provider AND ro.hotel_id = hs.hotel_id;",
+        "options": {}
+      },
+      "id": "9a646343-9b1c-4e23-9995-ea73db9f6a60",
+      "name": "PG Load",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "KdOvWQpeorjuzv9S",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "20b7c460-9483-46de-8dbf-7abbe4969f83",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "11b1764b-d3ee-4e13-b93e-c1fbd753b6d5",
+      "name": "If Google",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://mybusiness.googleapis.com/v4/' + $json.location_id + '/reviews?pageSize=100'}}",
+        "authentication": "oAuth2",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "id": "21841a3d-e24f-4933-b016-a08422e76555",
+      "name": "HTTP Google",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"provider\"]}}",
+              "operation": "equal",
+              "value2": "tripadvisor"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ac0b7197-80ac-4c2f-8a79-f858e6ddc6b4",
+      "name": "If Tripadvisor",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ ( () => { const endpoint = ($json.api_params && $json.api_params.endpoint ? $json.api_params.endpoint : '').trim(); const extra = ($json.api_params && $json.api_params.extraQuery) ? $json.api_params.extraQuery : {}; const p = new URLSearchParams({ location_id: String($json.location_id) }); Object.entries(extra).forEach(([k,v]) => p.append(k, String(v))); return endpoint + (endpoint.includes('?') ? '&' : '?') + p.toString(); } )() }}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "id": "ac89fef8-d835-4bdd-b012-ecae93fadb53",
+      "name": "HTTP Tripadvisor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize provider payloads + filter by last_seen offset\nconst out = [];\nfor (const it of items) {\n  const m = it.json;\n  const last = m.last_seen ? Date.parse(m.last_seen) : 0;\n  const body = m.resp || {};\n  const list = Array.isArray(body) ? body : (body.reviews || body.data || body.items || []);\n  if (!Array.isArray(list)) continue;\n  for (const r of list) {\n    const provider = String(m.provider || 'unknown');\n    const hotel_id = String(m.hotel_id || 'unknown');\n    const ext = r.reviewId || r.id || r.uuid || r.ref || r.review_id || null; if (!ext) continue;\n    const ratingNum = Number(r.starRating ?? r.rating ?? r.score ?? r.stars ?? null);\n    const rating = Number.isFinite(ratingNum) ? ratingNum : null;\n    const text = (r.comment || r.text || r.review_body || r.body || '').toString();\n    const author = (r.reviewer?.displayName || r.user || r.author || r.username || 'Unknown').toString();\n    const t = r.updateTime || r.createTime || r.time || r.publishedAt || r.date || new Date().toISOString();\n    const ts = Date.parse(t);\n    if (ts && ts <= last) continue;\n    const review_time = new Date(ts || Date.now()).toISOString();\n    const permalink = r.reviewUrl || r.url || r.link || null;\n    out.push({ json: { id: provider + '::' + ext, provider, hotel_id, hotel_name: m.hotel_name, rating, review_text: text, author, review_time, permalink, negative_threshold: Number(m.negative_threshold ?? -0.2), openai_model: m.openai_model || 'gpt-4o-mini', zendesk_enabled: !!m.zendesk_enabled, raw: r } });\n  }\n}\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        128
+      ],
+      "id": "8bb6e38f-6f34-4582-a7cd-155fb6810006",
+      "name": "Normalize"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "headerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "id": "3c1d3f4a-53dd-4a76-8815-3c7d85bd7974",
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        656,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read OpenAI response and add sentiment + sentiment_label\nreturn items.map(it => {\n  const ai = it.json.ai || {};\n  let sentiment_label = 'neutral';\n  let sentiment = 0;\n  try {\n    const content = ai.choices?.[0]?.message?.content ?? ai.choices?.[0]?.text ?? '{}';\n    const parsed = typeof content === 'string' ? JSON.parse(content) : content;\n    sentiment_label = String(parsed.label ?? 'neutral').toLowerCase();\n    const s = Number(parsed.score);\n    sentiment = Number.isFinite(s) ? s : (sentiment_label === 'negative' ? -0.8 : (sentiment_label === 'positive' ? 0.8 : 0));\n  } catch (_) {}\n  return { json: { ...it.json, sentiment, sentiment_label } };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        128
+      ],
+      "id": "4ebc7a4b-1eaf-4bd0-904a-f6e211117f6d",
+      "name": "Parse"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{`INSERT INTO reviews (id, provider, hotel_id, rating, review_text, author, review_time, permalink, sentiment, sentiment_label, raw)\nVALUES (\n  '${$json.id.replace(/'/g,\"''\")}',\n  '${$json.provider.replace(/'/g,\"''\")}',\n  '${$json.hotel_id.replace(/'/g,\"''\")}',\n  ${($json.rating!==null && $json.rating!==undefined)?$json.rating:'NULL'},\n  '${$json.review_text.replace(/'/g,\"''\")}',\n  '${$json.author.replace(/'/g,\"''\")}',\n  '${$json.review_time.replace(/'/g,\"''\")}',\n  ${$json.permalink ? `'${$json.permalink.replace(/'/g,\"''\")}'` : 'NULL'},\n  ${$json.sentiment},\n  '${$json.sentiment_label.replace(/'/g,\"''\")}',\n  '${JSON.stringify($json.raw).replace(/'/g,\"''\")}'::jsonb\n)\nON CONFLICT (id) DO NOTHING;`}}",
+        "options": {}
+      },
+      "id": "18742cfd-476d-4803-82a8-1f0ca275806a",
+      "name": "PG Upsert",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "KdOvWQpeorjuzv9S",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{`INSERT INTO review_offsets(provider, hotel_id, last_seen)\nVALUES ('${$json.provider.replace(/'/g,\"''\")}', '${$json.hotel_id.replace(/'/g,\"''\")}', '${$json.review_time.replace(/'/g,\"''\")}')\nON CONFLICT (provider, hotel_id) DO UPDATE SET last_seen = GREATEST(review_offsets.last_seen, EXCLUDED.last_seen);`}}",
+        "options": {}
+      },
+      "id": "302edf96-ddf6-4936-a75b-78bc13cdb893",
+      "name": "PG Offset",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "KdOvWQpeorjuzv9S",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json[\"sentiment\"]}}",
+              "operation": "smallerEqual",
+              "value2": "={{$json[\"negative_threshold\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "53174403-0990-491d-9935-f8a8be6ec058",
+      "name": "If Negative",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"zendesk_enabled\"] === true}}",
+              "operation": "isTrue"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3b3de82d-a301-4133-a2a4-13e80a1be472",
+      "name": "If Zendesk",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "description": "={{`Provider: ${$json.provider}\nHotel: ${$json.hotel_id} (${ $json.hotel_name || '' })\nRating: ${$json.rating ?? 'N/A'}\nAuthor: ${$json.author}\nTime: ${$json.review_time}\nSentiment: ${$json.sentiment} (${ $json.sentiment_label })\nLink: ${$json.permalink || 'N/A'}\n\nText:\n${$json.review_text}`}}",
+        "additionalFields": {
+          "externalId": "={{ $json.id }}",
+          "subject": "={{`Negative review - ${$json.hotel_name || $json.hotel_id}`}}",
+          "tags": "={{ ['review', $json.provider, 'negative', $json.hotel_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.zendesk",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        224
+      ],
+      "id": "139a15ec-014a-41ec-9599-47d16333307a",
+      "name": "Zendesk: Create Ticket",
+      "credentials": {
+        "zendeskOAuth2Api": {
+          "id": "f04zbPEtZ2AHJqrX",
+          "name": "Zendesk account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "PG Init",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PG Init": {
+      "main": [
+        [
+          {
+            "node": "PG Load",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PG Load": {
+      "main": [
+        [
+          {
+            "node": "If Google",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If Tripadvisor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Google": {
+      "main": [
+        [
+          {
+            "node": "HTTP Google",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Tripadvisor": {
+      "main": [
+        [
+          {
+            "node": "HTTP Tripadvisor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "HTTP Google": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Tripadvisor": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse": {
+      "main": [
+        [
+          {
+            "node": "PG Upsert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If Negative",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PG Upsert": {
+      "main": [
+        [
+          {
+            "node": "PG Offset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Negative": {
+      "main": [
+        [
+          {
+            "node": "If Zendesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Zendesk": {
+      "main": [
+        [
+          {
+            "node": "Zendesk: Create Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c8a571ac-3a48-4880-8adf-04c7d9254b86",
+  "meta": {
+    "instanceId": "fb9045008a9cc013cfb89e5d4504a5822610a53295d2b482c4020229a151311e"
+  },
+  "id": "9u4nkVLcf9CPfYfc",
+  "tags": []
+}
