@@ -6,7 +6,7 @@ Automate hotel review intake, analyze sentiment, and open tickets for negative f
 Why Suite Talk?
 
 Guest feedback is scattered across Google & TripAdvisor. Managers miss issues, and quarterly reporting takes forever.
-Suite Talk pulls reviews automatically, normalizes them, scores sentiment, and (optionally) creates Zendesk tickets for fast follow-up — while storing everything in Postgres for reporting.
+Suite Talk pulls reviews automatically, normalizes them, scores sentiment, and (optionally) creates Zendesk tickets for fast follow-up , while storing everything in Postgres for reporting.
 
 
 What it does
