@@ -1,6 +1,6 @@
 # Suite-Talk
 
-Automate hotel review intake, analyze sentiment, and open tickets for negative feedback — all with a config-driven n8n workflow (no hard-coded secrets).
+Automate hotel review intake, analyze sentiment, and open tickets for negative feedback, all with a config-driven n8n workflow.
 
 
 Why Suite Talk?
